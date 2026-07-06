@@ -2,7 +2,7 @@
 from rest_framework import viewsets, permissions
 from .models import Category, Task, DailyCheckIn
 from .serializers import CategorySerializer, TaskSerializer, DailyCheckInSerializer
-
+from django.shortcuts import render
 
 class CategoryViewSet(viewsets.ModelViewSet):
     serializer_class = CategorySerializer
@@ -20,7 +20,11 @@ class TaskViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        return Task.objects.filter(user=self.request.user)
+        queryset = Task.objects.filter(user=self.request.user)
+        date = self.request.query_params.get('date')
+        if date:
+            queryset = queryset.filter(date=date)
+        return queryset
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
@@ -35,3 +39,6 @@ class DailyCheckInViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
+
+def today_view(request):
+    return render(request, 'tasks/today.html')

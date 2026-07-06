@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Today</title>
+  <style>
+    body { font-family: sans-serif; max-width: 500px; margin: 2rem auto; padding: 0 1rem; }
+    h2 { margin-top: 2rem; border-bottom: 1px solid #ccc; padding-bottom: 0.3rem; }
+    .task { display: flex; align-items: center; gap: 0.5rem; padding: 0.4rem 0; }
+    .task.done label { text-decoration: line-through; color: #999; }
+    form { margin-top: 2rem; display: flex; flex-direction: column; gap: 0.5rem; }
+    input, select, button { padding: 0.5rem; font-size: 1rem; }
+  </style>
+</head>
+<body>
+  <h1>Today — <span id="today-date"></span></h1>
+
+  <div id="morning"><h2>Morning</h2></div>
+  <div id="afternoon"><h2>Afternoon</h2></div>
+  <div id="evening"><h2>Evening</h2></div>
+
+  <form id="add-task-form">
+    <input type="text" id="title" placeholder="New task..." required>
+    <select id="time_block">
+      <option value="morning">Morning</option>
+      <option value="afternoon">Afternoon</option>
+      <option value="evening">Evening</option>
+    </select>
+    <button type="submit">Add task</button>
+  </form>
+
+  <script>
+    const TOKEN = "6e9b08ab4cf4c9b8e7966c09f27c892b1d026bb4"; // your token here
+    const today = new Date().toISOString().split('T')[0]; // e.g. "2026-07-07"
+    document.getElementById('today-date').textContent = today;
+
+    async function fetchTasks() {
+      const res = await fetch(`/api/tasks/?date=${today}`, {
+        headers: { "Authorization": `Token ${TOKEN}` }
+      });
+      const tasks = await res.json();
+      renderTasks(tasks);
+    }
+
+    function renderTasks(tasks) {
+      ['morning', 'afternoon', 'evening'].forEach(block => {
+        const container = document.getElementById(block);
+        container.querySelectorAll('.task').forEach(el => el.remove());
+
+        tasks.filter(t => t.time_block === block).forEach(task => {
+          const div = document.createElement('div');
+          div.className = 'task' + (task.is_done ? ' done' : '');
+          div.innerHTML = `
+            <input type="checkbox" ${task.is_done ? 'checked' : ''} data-id="${task.id}">
+            <label>${task.title}</label>
+          `;
+          div.querySelector('input').addEventListener('change', (e) => toggleDone(task.id, e.target.checked));
+          container.appendChild(div);
+        });
+      });
+    }
+
+    async function toggleDone(id, is_done) {
+      await fetch(`/api/tasks/${id}/`, {
+        method: 'PATCH',
+        headers: {
+          "Authorization": `Token ${TOKEN}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ is_done })
+      });
+      fetchTasks();
+    }
+
+    document.getElementById('add-task-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const title = document.getElementById('title').value;
+      const time_block = document.getElementById('time_block').value;
+
+      await fetch('/api/tasks/', {
+        method: 'POST',
+        headers: {
+          "Authorization": `Token ${TOKEN}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ title, time_block, date: today })
+      });
+
+      document.getElementById('title').value = '';
+      fetchTasks();
+    });
+
+    fetchTasks();
+  </script>
+</body>
+</html>
