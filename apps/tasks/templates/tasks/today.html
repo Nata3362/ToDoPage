@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Today</title>
+  <style>
+    body { font-family: sans-serif; max-width: 500px; margin: 2rem auto; padding: 0 1rem; }
+    h2 { margin-top: 2rem; border-bottom: 1px solid #ccc; padding-bottom: 0.3rem; }
+    .task { display: flex; align-items: center; gap: 0.5rem; padding: 0.4rem 0; }
+    .task.done label { text-decoration: line-through; color: #999; }
+    form { margin-top: 2rem; display: flex; flex-direction: column; gap: 0.5rem; }
+    input, select, button { padding: 0.5rem; font-size: 1rem; }
+    .nav { display:flex; gap:0.5rem; align-items:center; margin-bottom:1rem; }
+    .nav button { padding:0.4rem 0.6rem; border:1px solid #ddd; background:#fff; cursor:pointer; }
+    .nav button.active { background:#3B82F6; color:#fff; border-color:#3B82F6; }
+    .calendar { display:grid; gap:8px; }
+    .calendar.day { grid-template-columns: 1fr; }
+    .calendar.week { grid-template-columns: repeat(7, 1fr); }
+    .calendar.month { grid-template-columns: repeat(7, 1fr); }
+    .day-cell { border:1px solid #eee; min-height:80px; padding:6px; background:#fff; display:flex; flex-direction:column; }
+    .day-cell .date { font-size:0.9rem; color:#555; margin-bottom:6px; }
+    .task { display:flex; align-items:center; gap:0.5rem; padding:0.2rem 0; }
+    .task button.delete-task { margin-left:auto; background:transparent; border:none; color:#e00; cursor:pointer; }
+  </style>
+</head>
+<body>
+  <nav class="nav">
+    <button id="view-day" class="active">Day</button>
+    <button id="view-week">Week</button>
+    <button id="view-month">Month</button>
+    <div style="margin-left:auto">
+      <button id="prev">‹</button>
+      <button id="today-btn">Today</button>
+      <button id="next">›</button>
+    </div>
+  </nav>
+  <h1>Agenda</span></h1>
+  <div id="calendar" class="calendar day"></div>
+
+
+  <form id="add-task-form">
+    <input type="text" id="title" placeholder="New task..." required>
+    <select id="time_block">
+      <option value="morning">Morning</option>
+      <option value="afternoon">Afternoon</option>
+      <option value="evening">Evening</option>
+    </select>
+    <button type="submit">Add task</button>
+  </form>
+
+  <script>
+    const TOKEN = "6e9b08ab4cf4c9b8e7966c09f27c892b1d026bb4";
+    let currentDate = new Date();
+    let currentView = 'day'; // day | week | month
+
+    function iso(d){ return d.toISOString().split('T')[0]; }
+
+    function startEndForView(date, view){
+      const d = new Date(date);
+      if(view === 'day'){
+        return [iso(d), iso(d)];
+      } else if(view === 'week'){
+        const day = (d.getDay() + 6) % 7; // Monday as day 0
+        const start = new Date(d); start.setDate(d.getDate() - day);
+        const end = new Date(start); end.setDate(start.getDate() + 6);
+        return [iso(start), iso(end)];
+      } else { // month
+        const start = new Date(d.getFullYear(), d.getMonth(), 1);
+        const end = new Date(d.getFullYear(), d.getMonth()+1, 0);
+        return [iso(start), iso(end)];
+      }
+    }
+
+    async function fetchTasksForRange(start, end){
+      const res = await fetch(`/api/tasks/?start=${start}&end=${end}`, {
+        headers: { "Authorization": `Token ${TOKEN}` }
+      });
+      return await res.json();
+    }
+
+    function groupByDate(tasks){
+      return tasks.reduce((acc, t) => {
+        acc[t.date] = acc[t.date] || [];
+        acc[t.date].push(t);
+        return acc;
+      }, {});
+    }
+
+    function render(){
+      const cal = document.getElementById('calendar');
+      cal.className = 'calendar ' + currentView;
+      const [start, end] = startEndForView(currentDate, currentView);
+      fetchTasksForRange(start, end).then(tasks => {
+        const byDate = groupByDate(tasks);
+        cal.innerHTML = '';
+        if(currentView === 'day'){
+          const cell = renderCell(iso(currentDate), byDate[iso(currentDate)] || []);
+          cal.appendChild(cell);
+        } else {
+          const s = new Date(start), e = new Date(end);
+          for(let d = new Date(s); d <= e; d.setDate(d.getDate()+1)){
+            const dayIso = iso(d);
+            cal.appendChild(renderCell(dayIso, byDate[dayIso] || []));
+          }
+        }
+      });
+    }
+
+    function renderCell(dateStr, tasks){
+      const div = document.createElement('div');
+      div.className = 'day-cell';
+      div.innerHTML = `<div class="date">${dateStr}</div>`;
+      tasks.forEach(t => {
+        const tdiv = document.createElement('div');
+        tdiv.className = 'task' + (t.is_done ? ' done' : '');
+        tdiv.innerHTML = `
+          <input type="checkbox" ${t.is_done ? 'checked' : ''}>
+          <label>${t.title}</label>
+          <button class="delete-task">✕</button>
+        `;
+        tdiv.querySelector('input').addEventListener('change', (e)=> toggleDone(t.id, e.target.checked));
+        tdiv.querySelector('.delete-task').addEventListener('click', ()=> deleteTask(t.id));
+        div.appendChild(tdiv);
+      });
+      return div;
+    }
+
+    async function deleteTask(id){
+      await fetch(`/api/tasks/${id}/`, { method:'DELETE', headers:{"Authorization": `Token ${TOKEN}`} });
+      render();
+    }
+    async function toggleDone(id, is_done){
+      await fetch(`/api/tasks/${id}/`, {
+        method:'PATCH',
+        headers:{"Authorization": `Token ${TOKEN}`, "Content-Type":"application/json"},
+        body: JSON.stringify({ is_done })
+      });
+      render();
+    }
+
+    /* nav handlers */
+    document.getElementById('view-day').addEventListener('click', ()=> setView('day'));
+    document.getElementById('view-week').addEventListener('click', ()=> setView('week'));
+    document.getElementById('view-month').addEventListener('click', ()=> setView('month'));
+    document.getElementById('prev').addEventListener('click', ()=> { shift(-1); });
+    document.getElementById('next').addEventListener('click', ()=> { shift(1); });
+    document.getElementById('today-btn').addEventListener('click', ()=> { currentDate = new Date(); render(); });
+
+    function setView(v){
+      currentView = v;
+      document.querySelectorAll('.nav button').forEach(b=> b.classList.remove('active'));
+      document.getElementById('view-'+v).classList.add('active');
+      render();
+    }
+
+    function shift(amount){
+      if(currentView === 'day') currentDate.setDate(currentDate.getDate() + amount);
+      else if(currentView === 'week') currentDate.setDate(currentDate.getDate() + (7 * amount));
+      else { currentDate.setMonth(currentDate.getMonth() + amount); }
+      render();
+    }
+
+    /* wire up add-form: add task for currentDate (or selected date when in day view) */
+    document.getElementById('add-task-form').addEventListener('submit', async (e)=>{
+      e.preventDefault();
+      const title = document.getElementById('title').value;
+      const time_block = document.getElementById('time_block').value;
+      const date = iso(currentDate);
+      await fetch('/api/tasks/', {
+        method:'POST',
+        headers: {"Authorization": `Token ${TOKEN}`, "Content-Type":"application/json"},
+        body: JSON.stringify({ title, time_block, date })
+      });
+      document.getElementById('title').value = '';
+      render();
+    });
+
+    /* initial render */
+    render();
+  </script>
+</body>
+</html>

@@ -21,9 +21,13 @@ class TaskViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         queryset = Task.objects.filter(user=self.request.user)
+        start = self.request.query_params.get('start')
+        end = self.request.query_params.get('end')
         date = self.request.query_params.get('date')
         if date:
             queryset = queryset.filter(date=date)
+        if start and end:
+            queryset = queryset.filter(date__gte=start, date__lte=end)
         return queryset
 
     def perform_create(self, serializer):
